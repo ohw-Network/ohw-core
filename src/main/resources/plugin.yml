@@ -1,0 +1,10 @@
+name: ohw-core
+main: net.ohw.menus.CompassMenuPlugin
+version: 1.0.0
+# api-version field introduced in 1.13+, remove for 1.8.9 compatibility
+commands:
+  menu:
+    description: 打開羅盤選單（54 格）
+    usage: /menu
+    permission: ohw.menu.use
+    permission-message: 您沒有權限使用此指令

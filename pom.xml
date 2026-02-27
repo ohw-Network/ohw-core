@@ -1,0 +1,88 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.ohw</groupId>
+    <artifactId>ohw-core</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>ohw-core</name>
+
+    <properties>
+        <java.version>8</java.version>
+        <!-- use a version matching your server's Minecraft release -->
+        <!-- 1.8.x servers generally compile against the 1.8.8 snapshot; 1.8.9 runs fine on it -->
+        <spigot.version>1.8.8-R0.1-SNAPSHOT</spigot.version>
+        <!-- SFTP Server Configuration -->
+        <sftp.host>172.27.160.60</sftp.host>
+        <sftp.port>2022</sftp.port>
+        <sftp.user>inytw.7439e6dc</sftp.user>
+        <sftp.password>Inyisagay87</sftp.password>
+        <sftp.remote.path>/home/container/plugins</sftp.remote.path>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.spigotmc</groupId>
+            <artifactId>spigot-api</artifactId>
+            <version>${spigot.version}</version>
+            <scope>provided</scope>
+            <!-- exclude bungeecord-chat which is a transitive dependency
+                 not needed for compiling and often missing for older versions -->
+            <exclusions>
+                <exclusion>
+                    <groupId>net.md-5</groupId>
+                    <artifactId>bungeecord-chat</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+
+    <repositories>
+        <repository>
+            <id>spigot-repo</id>
+            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+        </repository>
+    </repositories>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.10.1</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
+            </plugin>
+            <!-- Automatically upload jar to SFTP server after build -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <echo message="Uploading JAR to SFTP server..." />
+                                <exec executable="scp" dir="${project.build.directory}" failonerror="false">
+                                    <arg value="-P" />
+                                    <arg value="${sftp.port}" />
+                                    <arg value="${project.artifactId}-${project.version}.jar" />
+                                    <arg value="${sftp.user}@${sftp.host}:${sftp.remote.path}/" />
+                                </exec>
+                                <echo message="Upload complete! JAR should be at: ${sftp.remote.path}/${project.artifactId}-${project.version}.jar" />
+                                <echo message="Note: If upload failed, make sure SSH keys are configured or use: sshpass -p PASSWORD scp -P PORT jar SFTP_URL" />
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
