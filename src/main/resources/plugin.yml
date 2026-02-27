@@ -1,6 +1,6 @@
 name: ohw-core
 main: net.ohw.menus.CompassMenuPlugin
-version: 1.0.0
+version: 1.0.1
 # api-version field introduced in 1.13+, remove for 1.8.9 compatibility
 commands:
   menu:
