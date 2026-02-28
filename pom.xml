@@ -56,7 +56,7 @@
                     <target>${java.version}</target>
                 </configuration>
             </plugin>
-            <!-- Automatically upload jar to SFTP server after build -->
+            <!-- Automatically upload jar to SFTP server after build using WinSCP via PowerShell -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
@@ -69,15 +69,15 @@
                         </goals>
                         <configuration>
                             <target>
-                                <echo message="Uploading JAR to SFTP server..." />
-                                <exec executable="scp" dir="${project.build.directory}" failonerror="false">
-                                    <arg value="-P" />
-                                    <arg value="${sftp.port}" />
-                                    <arg value="${project.artifactId}-${project.version}.jar" />
-                                    <arg value="${sftp.user}@${sftp.host}:${sftp.remote.path}/" />
+                                <echo message="Running WinSCP upload script via PowerShell..." />
+                                <exec executable="powershell.exe" failonerror="false">
+                                    <arg value="-NoProfile" />
+                                    <arg value="-ExecutionPolicy" />
+                                    <arg value="Bypass" />
+                                    <arg value="-File" />
+                                    <arg value="${basedir}\\upload.ps1" />
                                 </exec>
-                                <echo message="Upload complete! JAR should be at: ${sftp.remote.path}/${project.artifactId}-${project.version}.jar" />
-                                <echo message="Note: If upload failed, make sure SSH keys are configured or use: sshpass -p PASSWORD scp -P PORT jar SFTP_URL" />
+                                <echo message="WinSCP upload script executed (check output for success)." />
                             </target>
                         </configuration>
                     </execution>
