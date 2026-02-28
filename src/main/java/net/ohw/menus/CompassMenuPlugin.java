@@ -3,12 +3,20 @@ package net.ohw.menus;
 import com.google.common.io.ByteArrayDataInput;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.model.user.User;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.ItemSpawnEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -17,145 +25,241 @@ import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class CompassMenuPlugin extends JavaPlugin implements Listener, PluginMessageListener {
+
     private static CompassMenuPlugin instance;
-    public static final String MENU_TITLE = ChatColor.DARK_AQUA + "Compass Menu";
+    private DatabaseManager db;
+
+    public static final String MENU_TITLE = ChatColor.DARK_AQUA + "伺服器選單";
     public static final String PROFILE_TITLE = ChatColor.DARK_GRAY + "玩家資訊";
     public static final String[] SERVERS = {"pvp", "shop", "bridge", "smp-1"};
     
-    // 儲存人數的快取
     public static Map<String, Integer> serverCount = new HashMap<>();
 
     @Override
     public void onEnable() {
         instance = this;
         
-        // 註冊事件
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(new InventoryListener(), this);
         Bukkit.getPluginManager().registerEvents(new HotbarListener(this), this);
-
-        // 註冊指令
         this.getCommand("menu").setExecutor(new MenuCommand(this));
-        this.getCommand("nick").setExecutor(new NickCommand());
 
-        // 註冊 BungeeCord 通道 (發送與接收)
         this.getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         this.getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", this);
+
+        db = new DatabaseManager("172.27.160.60", 3306, "s1_ohw", "u1_aiMuI1XC2r", "YLl4O6a66=Os7l=yz3AKgSiA");
+        try {
+            db.connect();
+            getLogger().info("MySQL 連線成功！");
+        } catch (SQLException e) {
+            getLogger().severe("無法連線至 MySQL！原因: " + e.getMessage());
+        }
         
-        // 每 5 秒自動向 BungeeCord 詢問一次各服人數
         Bukkit.getScheduler().runTaskTimer(this, () -> {
             if (Bukkit.getOnlinePlayers().isEmpty()) return;
-            for (String server : SERVERS) {
-                updateServerCount(server);
+            for (String server : SERVERS) updateServerCount(server);
+        }, 20L, 100L);
+    }
+
+    public void openProfileGui(Player p) {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            int level = 1, coins = 0;
+            try (PreparedStatement ps = db.getConnection().prepareStatement("SELECT level, coins FROM player_stats WHERE uuid = ?")) {
+                ps.setString(1, p.getUniqueId().toString());
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    level = rs.getInt("level");
+                    coins = rs.getInt("coins");
+                } else {
+                    try (PreparedStatement insert = db.getConnection().prepareStatement("INSERT INTO player_stats (uuid, level, coins) VALUES (?, 1, 0)")) {
+                        insert.setString(1, p.getUniqueId().toString());
+                        insert.executeUpdate();
+                    }
+                }
+            } catch (SQLException e) { e.printStackTrace(); }
+
+            final int fLevel = level;
+            final int fCoins = coins;
+            Bukkit.getScheduler().runTask(this, () -> p.openInventory(createProfileMenu(p, fLevel, fCoins)));
+        });
+    }
+
+    public static Inventory createProfileMenu(Player p, int level, int coins) {
+        Inventory inv = Bukkit.createInventory(null, 27, PROFILE_TITLE);
+        ItemStack filler = new ItemStack(Material.STAINED_GLASS_PANE, 1, (short) 15);
+        ItemMeta fMeta = filler.getItemMeta(); fMeta.setDisplayName(" "); filler.setItemMeta(fMeta);
+        for (int i = 0; i < 27; i++) inv.setItem(i, filler);
+
+        ItemStack nickItem = new ItemStack(Material.NAME_TAG);
+        ItemMeta nickMeta = nickItem.getItemMeta();
+        nickMeta.setDisplayName(ChatColor.GOLD + "更改暱稱");
+        nickItem.setItemMeta(nickMeta);
+        inv.setItem(11, nickItem);
+
+        ItemStack head = new ItemStack(Material.SKULL_ITEM, 1, (short) 3);
+        SkullMeta meta = (SkullMeta) head.getItemMeta();
+        meta.setOwner(p.getName());
+        meta.setDisplayName(ChatColor.YELLOW + "你的個人檔案");
+        
+        List<String> lore = new ArrayList<>();
+        lore.add("");
+        lore.add(ChatColor.GRAY + "等級: " + ChatColor.GOLD + level);
+        lore.add(ChatColor.GRAY + "金幣: " + ChatColor.GOLD + coins);
+        
+        String rank = ChatColor.WHITE + "Player";
+        try {
+            LuckPerms api = Bukkit.getServicesManager().getRegistration(LuckPerms.class).getProvider();
+            User user = api.getUserManager().getUser(p.getUniqueId());
+            if (user != null) {
+                String prefix = user.getCachedData().getMetaData().getPrefix();
+                if (prefix != null) rank = ChatColor.translateAlternateColorCodes('&', prefix);
             }
-        }, 20L, 100L); // 20 ticks 延遲, 100 ticks (5秒) 執行一次
-    }
-
-    // 發送獲取人數的請求
-    private void updateServerCount(String server) {
-        ByteArrayDataOutput out = ByteStreams.newDataOutput();
-        out.writeUTF("PlayerCount");
-        out.writeUTF(server);
+        } catch (Exception ignored) {}
         
-        // 隨機找一位在線玩家發送訊息（Bungee 要求必須透過玩家發送）
-        Player player = Bukkit.getOnlinePlayers().iterator().next();
-        player.sendPluginMessage(this, "BungeeCord", out.toByteArray());
+        lore.add(ChatColor.GRAY + "目前 Rank: " + rank);
+        meta.setLore(lore); head.setItemMeta(meta); inv.setItem(13, head);
+        return inv;
     }
 
-    // 接收來自 BungeeCord 的回傳訊息
-    @Override
-    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        if (!channel.equals("BungeeCord")) return;
+    // --- 大廳環境與事件處理 ---
 
-        ByteArrayDataInput in = ByteStreams.newDataInput(message);
-        String subchannel = in.readUTF();
+    // 修改後的挖掘邏輯
+@EventHandler(priority = EventPriority.HIGHEST)
+public void onBlockBreak(BlockBreakEvent e) {
+    Player p = e.getPlayer();
+    if (p.getGameMode() == org.bukkit.GameMode.CREATIVE) return;
+
+    // 如果是羊毛，允許挖掘動畫，但「取消掉落」並「瞬間還原」
+    if (e.getBlock().getType() == Material.WOOL) {
+        e.setExpToDrop(0);
         
-        if (subchannel.equals("PlayerCount")) {
-            String server = in.readUTF();
-            int count = in.readInt();
-            serverCount.put(server, count); // 更新快取
-        }
-    }
+        // 關鍵：不要 Cancel，而是紀錄方塊資料
+        final org.bukkit.block.BlockState state = e.getBlock().getState();
+        final Material type = state.getType();
+        final short data = state.getRawData();
 
-    // --- 以下為之前的 GUI 與道具發放邏輯，保持不變 ---
+        // 在下一 tick 立刻把方塊變回去，這樣玩家會看到方塊碎掉的動畫
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            e.getBlock().setType(type);
+            e.getBlock().setData((byte) data);
+        }, 1L);
+    } else {
+        // 其他方塊直接禁止，這會顯示「敲不動」的動畫
+        e.setCancelled(true);
+    }
+}
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player p = event.getPlayer();
-        // 羊毛 (Slot 1)
+        p.teleport(new org.bukkit.Location(p.getWorld(), 8.5, 48, -0.5, 0, 0));
+        p.setGameMode(org.bukkit.GameMode.SURVIVAL);
+        p.getInventory().clear();
+        p.getInventory().setArmorContents(null);
+
+        // Slot 0: 羅盤
+        ItemStack compass = new ItemStack(Material.COMPASS);
+        ItemMeta cMeta = compass.getItemMeta();
+        cMeta.setDisplayName(ChatColor.YELLOW + "伺服器傳送門 " + ChatColor.GRAY + "(右鍵)");
+        compass.setItemMeta(cMeta);
+        p.getInventory().setItem(0, compass);
+
+        // Slot 1: 羊毛
         ItemStack wool = new ItemStack(Material.WOOL, 64);
         ItemMeta woolMeta = wool.getItemMeta();
-        woolMeta.setDisplayName(ChatColor.WHITE + "無限羊毛 " + ChatColor.GRAY + "(自動消失)");
+        woolMeta.setDisplayName(ChatColor.YELLOW + "無限羊毛");
         wool.setItemMeta(woolMeta);
         p.getInventory().setItem(1, wool);
 
-        // 頭顱 (Slot 7)
+        // Slot 7: 頭顱
         ItemStack head = new ItemStack(Material.SKULL_ITEM, 1, (short) 3);
         SkullMeta headMeta = (SkullMeta) head.getItemMeta();
         headMeta.setOwner(p.getName());
-        headMeta.setDisplayName(ChatColor.GREEN + "玩家資訊 " + ChatColor.GRAY + "(右鍵開啟)");
+        headMeta.setDisplayName(ChatColor.YELLOW + "個人資訊 " + ChatColor.GRAY + "(右鍵)");
         head.setItemMeta(headMeta);
         p.getInventory().setItem(7, head);
+        
+        p.setHealth(20.0);
+        p.setFoodLevel(20);
+    }
+
+    @EventHandler
+    public void onEntityDamage(EntityDamageEvent e) {
+        if (e.getEntity() instanceof Player) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onItemDrop(PlayerDropItemEvent e) {
+        e.setCancelled(true); // 物品會彈回背包
+    }
+
+    @EventHandler
+    public void onItemSpawn(ItemSpawnEvent e) {
+        e.setCancelled(true); // 地上不准有掉落物
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent e) {
+        if (e.getWhoClicked().getGameMode() != org.bukkit.GameMode.CREATIVE) e.setCancelled(true);
+    }
+
+    // --- BungeeCord 通訊 ---
+    private void updateServerCount(String server) {
+        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+        out.writeUTF("PlayerCount");
+        out.writeUTF(server);
+        if (!Bukkit.getOnlinePlayers().isEmpty()) {
+            Player player = Bukkit.getOnlinePlayers().iterator().next();
+            player.sendPluginMessage(this, "BungeeCord", out.toByteArray());
+        }
+    }
+
+    @Override
+    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+        if (!channel.equals("BungeeCord")) return;
+        ByteArrayDataInput in = ByteStreams.newDataInput(message);
+        if (in.readUTF().equals("PlayerCount")) {
+            serverCount.put(in.readUTF(), in.readInt());
+        }
     }
 
     public static Inventory createCompassMenu(Player p) {
         Inventory inv = Bukkit.createInventory(null, 54, MENU_TITLE);
-        ItemStack filler = createGrayGlass();
-        for (int i = 0; i < 54; i++) inv.setItem(i, filler);
-
-        // 平均分佈在中間排 (位置 20, 21, 23, 24)
+        for (int i = 0; i < 54; i++) inv.setItem(i, createGrayGlass());
         inv.setItem(20, createServerItem("pvp", Material.WOOD_SWORD, "點擊進入激戰區"));
-        inv.setItem(21, createServerItem("shop", Material.DIAMOND, "購買各式道具"));
+        inv.setItem(21, createServerItem("shop", Material.DIAMOND, "購買生存時各種道具物品"));
         inv.setItem(23, createServerItem("bridge", Material.SANDSTONE, "經典 Bridge 遊戲"));
-        inv.setItem(24, createServerItem("smp-1", Material.GRASS, "生存一服"));
-
+        inv.setItem(24, createServerItem("smp-1", Material.GRASS, "SMP 1"));
         return inv;
     }
 
-    private static ItemStack createServerItem(String serverID, Material material, String loreText) {
-        int count = serverCount.getOrDefault(serverID, 0);
-        // 數量反映人數 (最小 1，最大 64)
-        int displayCount = (count <= 0) ? 1 : Math.min(count, 64);
-        
-        ItemStack item = new ItemStack(material, displayCount);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(ChatColor.GOLD + "傳送門：" + serverID.toUpperCase());
-            List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + loreText);
-            lore.add("");
-            lore.add(ChatColor.AQUA + "目前人數: " + ChatColor.WHITE + count);
-            lore.add("");
-            lore.add(ChatColor.YELLOW + "▶ 點擊開始連線");
-            meta.setLore(lore);
-            item.setItemMeta(meta);
-        }
-        return item;
+    private static ItemStack createServerItem(String id, Material m, String l) {
+        int c = serverCount.getOrDefault(id, 0);
+        ItemStack i = new ItemStack(m, (c <= 0) ? 1 : Math.min(c, 64));
+        ItemMeta mt = i.getItemMeta();
+        mt.setDisplayName(ChatColor.GOLD + id.toUpperCase());
+        List<String> lo = new ArrayList<>();
+        lo.add(ChatColor.GRAY + l); lo.add(ChatColor.AQUA + "人數: " + ChatColor.WHITE + c);
+        mt.setLore(lo); i.setItemMeta(mt);
+        return i;
     }
 
     private static ItemStack createGrayGlass() {
-        ItemStack glass = new ItemStack(Material.STAINED_GLASS_PANE, 1, (short) 7);
-        ItemMeta meta = glass.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(" ");
-            glass.setItemMeta(meta);
-        }
-        return glass;
-    }
-
-    public static Inventory createProfileMenu(Player p) {
-        Inventory inv = Bukkit.createInventory(null, 27, PROFILE_TITLE);
-        // ... (保持之前的 Profile GUI 代碼) ...
-        return inv;
+        ItemStack g = new ItemStack(Material.STAINED_GLASS_PANE, 1, (short) 7);
+        ItemMeta m = g.getItemMeta(); m.setDisplayName(" "); g.setItemMeta(m);
+        return g;
     }
 
     public static CompassMenuPlugin getInstance() { return instance; }
     @Override
-    public void onDisable() { getLogger().info("CompassMenu disabled"); }
+    public void onDisable() {}
 }

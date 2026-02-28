@@ -9,32 +9,36 @@
     <name>ohw-core</name>
 
     <properties>
-        <java.version>8</java.version>
-        <!-- use a version matching your server's Minecraft release -->
-        <!-- 1.8.x servers generally compile against the 1.8.8 snapshot; 1.8.9 runs fine on it -->
-        <spigot.version>1.8.8-R0.1-SNAPSHOT</spigot.version>
-        <!-- SFTP Server Configuration -->
-        <sftp.host>172.27.160.60</sftp.host>
-        <sftp.port>2022</sftp.port>
-        <sftp.user>inytw.7439e6dc</sftp.user>
-        <sftp.password>Inyisagay87</sftp.password>
-        <sftp.remote.path>/home/container/plugins</sftp.remote.path>
+        <java.version>1.8</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
-            <version>${spigot.version}</version>
+            <version>1.8.8-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
-            <!-- exclude bungeecord-chat which is a transitive dependency
-                 not needed for compiling and often missing for older versions -->
             <exclusions>
                 <exclusion>
                     <groupId>net.md-5</groupId>
                     <artifactId>bungeecord-chat</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.28</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.4</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -52,36 +56,10 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.10.1</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                    <encoding>UTF-8</encoding>
                 </configuration>
-            </plugin>
-            <!-- Automatically upload jar to SFTP server after build using WinSCP via PowerShell -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.1.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <echo message="Running WinSCP upload script via PowerShell..." />
-                                <exec executable="powershell.exe" failonerror="false">
-                                    <arg value="-NoProfile" />
-                                    <arg value="-ExecutionPolicy" />
-                                    <arg value="Bypass" />
-                                    <arg value="-File" />
-                                    <arg value="${basedir}\\upload.ps1" />
-                                </exec>
-                                <echo message="WinSCP upload script executed (check output for success)." />
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

@@ -23,15 +23,12 @@ public class InventoryListener implements Listener {
 
         // 1. 處理「羅盤選單」的點擊
         if (CompassMenuPlugin.MENU_TITLE.equals(title)) {
-            e.setCancelled(true); // 阻止拿取物品
-            
+            e.setCancelled(true);
             ItemStack clicked = e.getCurrentItem();
             if (clicked == null || clicked.getType() == Material.AIR) return;
 
-            // 只要不是背景玻璃，就嘗試解析名稱來傳送
             if (clicked.hasItemMeta() && clicked.getItemMeta().hasDisplayName()) {
                 String displayName = clicked.getItemMeta().getDisplayName().toLowerCase();
-                
                 for (String server : CompassMenuPlugin.SERVERS) {
                     if (displayName.contains(server.toLowerCase())) {
                         p.closeInventory();
@@ -44,19 +41,30 @@ public class InventoryListener implements Listener {
 
         // 2. 處理「玩家資訊」選單的點擊
         else if (CompassMenuPlugin.PROFILE_TITLE.equals(title)) {
-            e.setCancelled(true); // 阻止拿取頭顱或裝飾玻璃
-            if (e.getRawSlot() == 13) {
-                p.sendMessage(ChatColor.YELLOW + "正在關閉個人資訊...");
+            e.setCancelled(true);
+            int slot = e.getRawSlot();
+
+            // 點擊「更改暱稱」(Slot 11)
+            if (slot == 11) {
                 p.closeInventory();
+                if (p.hasPermission("ohw.nick.premium")) {
+                    // 有權限則執行 /nick 指令 (讓外部插件處理)
+                    p.performCommand("nick");
+                } else {
+                    // 沒權限噴紅字提示
+                    p.sendMessage(ChatColor.RED + "如果你要更改暱稱的話，請購買 " + 
+                                  ChatColor.GOLD + "MVP" + ChatColor.AQUA + "++");
+                }
             }
+            
+            // 點擊「頭顱」(Slot 13)
+            if (slot == 13) {}
         }
 
-        // 3. 核心保護：防止玩家在背包中移動快捷列第 2 格 (羊毛) 與第 8 格 (頭顱)
-        // 這是為了防止玩家把無限羊毛存進箱子或換位置
+        // 3. 核心保護：防止玩家移動快捷列第 2 格 (羊毛) 與第 8 格 (頭顱)
         if (e.getClickedInventory() != null && e.getClickedInventory().getType() == InventoryType.PLAYER) {
             int slot = e.getSlot();
             if (slot == 1 || slot == 7) {
-                // 如果是創造模式則允許移動，否則取消
                 if (p.getGameMode() != org.bukkit.GameMode.CREATIVE) {
                     e.setCancelled(true);
                 }

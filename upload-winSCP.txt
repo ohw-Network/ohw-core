@@ -1,5 +1,0 @@
-open ohw-lobby
-option batch abort
-option confirm off
-put "target\ohw-core-1.0.1.jar" /home/container/plugins/
-exit
